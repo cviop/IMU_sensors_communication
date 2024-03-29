@@ -167,4 +167,3 @@ VP_SYS_VS_Systick.Signal=SYS_VS_Systick
 board=NUCLEO-F401RE
 boardIOC=true
 isbadioc=false
-isbadioc=false
