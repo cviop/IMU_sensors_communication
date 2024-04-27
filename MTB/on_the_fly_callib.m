@@ -1,0 +1,139 @@
+
+clear all
+
+
+nuc = serialport("COM6", 9600);
+
+%% Parameters, buffers init
+
+buffer_len = 10000;
+plot_len = 1000;
+n_valid_data = 0;
+
+lim3Dplot = 1000;
+ 
+% 
+
+magX_buffer = NaN(1,buffer_len);
+magY_buffer = NaN(1,buffer_len);
+magZ_buffer = NaN(1,buffer_len);
+
+magX_buffer_cal = NaN(1,buffer_len);
+magY_buffer_cal = NaN(1,buffer_len);
+magZ_buffer_cal = NaN(1,buffer_len);
+
+C = NaN(buffer_len, 3);
+magLen_buffer = NaN(1,buffer_len);
+
+%% Plot 1 - basic rolling graph xyz
+figure(1)
+xplot = plot(1:plot_len,magX_buffer(1:plot_len));
+hold on
+yplot = plot(1:plot_len,magY_buffer(1:plot_len));
+zplot = plot(1:plot_len,magZ_buffer(1:plot_len));
+lenplot = plot(1:plot_len,magLen_buffer(1:plot_len));
+hold off
+legend({"X" "Y" "Z" "length"})
+
+%% Plot 2 - 3D position based on values
+figure(2)
+plot3D_data = plot3(magX_buffer, magY_buffer, magZ_buffer, ...
+    "LineStyle","none","Marker","X","MarkerSize",8);
+xlabel("X");ylabel("Y");zlabel("Z")
+hold on
+plot3D_data_cal = plot3(magX_buffer_cal, magY_buffer_cal, magZ_buffer_cal, ...
+    "LineStyle","none","Marker","X","MarkerSize",8);
+
+
+% XZ proj
+plotXZ_shadow = plot3(magX_buffer, lim3Dplot*ones(1,numel(magY_buffer)), magZ_buffer);
+% XY proj
+plotXY_shadow = plot3(magX_buffer, magY_buffer, -lim3Dplot*ones(1,numel(magZ_buffer)));
+%ZY
+plotZY_shadow = plot3(lim3Dplot*ones(1,numel(magX_buffer)), magY_buffer, magZ_buffer);
+axis("equal")
+xlim([-lim3Dplot lim3Dplot])
+ylim([-lim3Dplot lim3Dplot])
+zlim([-lim3Dplot lim3Dplot])
+grid on
+grid minor
+axis("vis3d")
+hold off
+
+%% Get data
+
+
+while(1)
+    while((read(nuc, 1, "uint8")))
+    end
+    data = read(nuc, 6, "uint8");  
+    data
+
+    magXact = typecast(uint16(data(1)*2^8 + data(2)), 'int16');
+    magZact = typecast(uint16(data(3)*2^8 + data(4)), 'int16');
+    magYact = typecast(uint16(data(5)*2^8 + data(6)), 'int16');
+    magLenAct = sqrt((double(magXact)^2)+(double(magYact)^2)+(double(magZact)^2));
+
+    %%fprintf("raw: %d %d %d %d %d %d, Mx: %d, My: %d, Mz: %d\n", data, magXact, magYact, magZact)
+    if(abs(magXact)<2000 && abs(magYact)<2000 && abs(magZact)<2000)
+        magX_buffer = circshift(magX_buffer, 1,2);
+        magX_buffer(1) = magXact;
+        magY_buffer = circshift(magY_buffer, 1,2);
+        magY_buffer(1) = magYact;
+        magZ_buffer = circshift(magZ_buffer, 1,2);
+        magZ_buffer(1) = magZact;
+        magLen_buffer = circshift(magLen_buffer, 1, 2);
+        magLen_buffer(1) = magLenAct;
+    
+        if n_valid_data<buffer_len
+            n_valid_data = n_valid_data+1;
+        end
+    end
+    % Calibration
+    n_valid_data;
+    if n_valid_data >50
+
+        D = [magX_buffer(1:n_valid_data)',magY_buffer(1:n_valid_data)',magZ_buffer(1:n_valid_data)'];
+    
+        [A, b, exmfs] = magcal(D, "sym")
+        
+    
+        C(1:n_valid_data,:) = (D-b)*A;
+        
+        magX_buffer_cal = real(C(:,1)');
+        magY_buffer_cal = real(C(:,2)');
+        magZ_buffer_cal = real(C(:,3)');
+    
+        disp("Callibrating");
+    end
+
+
+    % plots update
+    
+    xplot.YData = magX_buffer(1:plot_len);
+    yplot.YData = magY_buffer(1:plot_len);
+    zplot.YData = magZ_buffer(1:plot_len);
+    lenplot.YData = magLen_buffer(1:plot_len);
+    
+
+    plot3D_data.XData = magX_buffer;
+    plot3D_data.YData = magY_buffer;
+    plot3D_data.ZData = magZ_buffer;
+
+    plot3D_data_cal.XData = magX_buffer_cal;
+    plot3D_data_cal.YData = magY_buffer_cal;
+    plot3D_data_cal.ZData = magZ_buffer_cal;
+
+    plotXZ_shadow.XData = magX_buffer;
+    plotXZ_shadow.ZData = magZ_buffer;
+
+    plotXY_shadow.XData = magX_buffer;
+    plotXY_shadow.YData = magY_buffer;
+
+    plotZY_shadow.YData = magY_buffer;
+    plotZY_shadow.ZData = magZ_buffer;
+
+    %%fprintf("%f\n", sqrt(double(magXact)^2+double(magZact)^2+double(magZact)^2))
+    %pause(0.001)
+end
+

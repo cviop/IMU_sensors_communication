@@ -1,0 +1,221 @@
+function [A,b,magB] = magcal_moje(d)
+
+    narginchk(1,2);
+    validateattributes(d, {'double', 'single'}, ...
+        {'2d', 'real', 'ncols', 3}, 'magcal', 'd');
+        
+    x = d(:,1);
+    y = d(:,2);
+    z = d(:,3);
+
+    if nargin < 2
+        [A,bCol,magB] = bestfit(x,y,z);
+    else
+        str = validatestring(fitkind, {'eye', 'diag', 'sym', 'auto'}, ...
+            'magcal', 'fitkind');
+        [A,bCol,magB] = parameterizedfit(str, x,y,z);
+    end
+
+    b = bCol(:).'; % make a row vector 
+
+end
+
+function [A,b,magB] = bestfit(x,y,z)
+% Find the best fit - 4, 7 or 10 parameter
+
+    [A,b,magB, er] = correctEllipsoid4(x,y,z);
+    
+    [A7,b7,magB7, er7, ispd7] = correctEllipsoid7(x,y,z);
+    isrealA7 = isreal(A7) || all(imag(A7) == 0, 'all');
+    if ispd7 && isrealA7 && (er7 < er)
+        A = real(A7);
+        b = b7;
+        magB = magB7;
+        er = er7;
+    end
+    
+    [A10,b10,magB10, er10, ispd10] = correctEllipsoid10(x,y,z);
+    isrealA10 = isreal(A10) || all(imag(A10) == 0, 'all');
+    if ispd10 && isrealA10 && (er10 < er)
+        A = real(A10);
+        b = b10;
+        magB = magB10;
+    end
+end
+
+function [A,b,magB] = parameterizedfit(str, x,y,z)
+% Choose 4 (eye) , 7  (diag), 10 (sym), parameter fit or best fit . 
+
+    switch str
+        case 'eye'
+            [A,b,magB] = correctEllipsoid4(x,y,z);
+        case 'diag'
+            [A,b,magB] = correctEllipsoid7(x,y,z);
+        case 'sym'
+            [A,b,magB] = correctEllipsoid10(x,y,z);
+        otherwise % auto
+            [A,b,magB] = bestfit(x,y,z);
+    end
+end
+
+function [Winv, V,B,er, ispd] = correctEllipsoid10(x,y,z)
+
+    d = [...
+        x.*x, ...
+        2*x.*y, ...
+        2*x.*z, ...
+        y.*y, ...
+        2*y.*z, ...
+        z.*z, ...
+        x, ...
+        y, ...
+        z, ...
+        ones(size(x))];
+
+    beta = smallestEigenVector(d);
+
+    A = beta([1 2 3; 2 4 5; 3 5 6]); %make symmetric
+    dA = det(A);
+
+    if dA < 0
+        A = -A;
+        beta = -beta;
+        dA = -dA; %Compensate for -A.
+    end
+
+    V = -0.5*(A\beta(7:9)); %hard iron offset
+
+    B = sqrt(abs(sum([...
+        A(1,1)*V(1)*V(1), ...
+        2*A(2,1)*V(2)*V(1), ...
+        2*A(3,1)*V(3)*V(1), ...
+        A(2,2)*V(2)*V(2), ...
+        2*A(3,2)*V(2)*V(3), ...
+        A(3,3)*V(3)*V(3), ...
+        -beta(end)] ...
+    )));
+
+  
+    % We correct Winv and B by det(A) because we don't know which has the
+    % gain. By convention, normalize A.
+
+    det3root = nthroot(dA,3);
+    det6root = sqrt(det3root);
+    Winv = sqrtm(A./det3root);
+    B = B./det6root;
+    
+    if nargout > 3 
+        res = residual(Winv,V,B, [x,y,z]);
+        er = real( (1/(2*B*B))*sqrt(res.'*res/numel(x)) );
+        [~,p] = chol(A);
+        ispd = (p == 0);
+    else
+        er = -ones(1, 'like',x);
+        ispd = -1;
+    end
+
+end
+
+function [Winv, V,B,er, ispd] = correctEllipsoid7(x,y,z)
+
+    d = [...
+        x.*x, ...
+        y.*y, ...
+        z.*z, ...
+        x, ...
+        y, ...
+        z, ...
+        ones(size(x))];
+
+    beta = smallestEigenVector(d);
+
+    A = diag(beta(1:3));
+    % Compute the determinant of A, a diagonal matrix.
+    dA = beta(1)*beta(2)*beta(3);
+
+    if dA < 0
+        A = -A;
+        beta = -beta;
+        dA = -dA; %Compensate for -A.
+    end
+    V = -0.5*(beta(4:6)./beta(1:3)); %hard iron offset
+
+    B = sqrt(abs(sum([...
+        A(1,1)*V(1)*V(1), ...
+        A(2,2)*V(2)*V(2), ...
+        A(3,3)*V(3)*V(3), ...
+        -beta(end)] ...
+    )));
+  
+
+    % We correct Winv and B by det(A) because we don't know which has the
+    % gain. By convention, normalize A.
+
+    det3root = nthroot(dA,3);
+    det6root = sqrt(det3root);
+    Winv = sqrtm(A./det3root);
+    B = B./det6root;
+    
+    if nargout > 3
+        res = residual(Winv,V,B, [x,y,z]);
+        er = real( (1/(2*B*B))*sqrt(res.'*res/numel(x)) );
+        [~,p] = chol(A);
+        ispd = (p == 0);
+    else
+        er = -ones(1, 'like',x);
+        ispd = -1;
+    end
+
+    
+    
+end
+
+function [Winv, V,B, er, ispd] = correctEllipsoid4(x,y,z)
+% R is the identity
+
+    bv = x.*x + y.*y + z.*z;
+
+    A3 = [x,y,z];
+    A = [A3 ones(numel(x),1, 'like', x)];
+
+    soln = A\bv;
+    Winv = eye(3, 'like', x);
+    V = 0.5*soln(1:3);
+    B = sqrt(soln(4) + sum(V.*V));
+    
+    if nargout > 3
+        res = A*soln - bv;
+        er = (1/(2*B*B) * sqrt( res.'*res / numel(x)));
+        ispd = 1;
+    else
+        er = -ones(1, 'like',x);
+        ispd = -1;
+    end
+end
+
+function r = residual(Winv, V, B, data)
+% Residual error after correction
+
+spherept = (Winv * (data.' - V)).'; % a point on the unit sphere
+radsq = sum(spherept.^2,2);
+
+r = radsq - B.^2;
+end
+
+function beta = smallestEigenVector(d)
+
+% Use SVD to compute the eigenvalues and eigenvectors.
+[~,~,V] = svd(d,'econ');
+beta = V(:,end); % Solution has smallest eigenvalue.
+
+% A more compact but less accurate approach. 
+
+% dtd = d.' * d;
+% 
+% [evc, evlmtx] = schur(dtd);
+% 
+% eigvals = diag(evlmtx);
+% [~, idx] = min(eigvals);
+% 
+% beta = evc(:,idx); % Solution has smallest eigenvalue.
+end
