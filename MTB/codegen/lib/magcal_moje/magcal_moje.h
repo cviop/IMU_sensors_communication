@@ -1,0 +1,36 @@
+/*
+ * Academic License - for use in teaching, academic research, and meeting
+ * course requirements at degree granting institutions only.  Not for
+ * government, commercial, or other organizational use.
+ * File: magcal_moje.h
+ *
+ * MATLAB Coder version            : 23.2
+ * C/C++ source code generated on  : 25-Apr-2024 02:15:45
+ */
+
+#ifndef MAGCAL_MOJE_H
+#define MAGCAL_MOJE_H
+
+/* Include Files */
+#include "rtwtypes.h"
+#include <stddef.h>
+#include <stdlib.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Function Declarations */
+extern void magcal_moje(const double d[3000], creal_T Winv[9], double V[3],
+                        double *B);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+/*
+ * File trailer for magcal_moje.h
+ *
+ * [EOF]
+ */
